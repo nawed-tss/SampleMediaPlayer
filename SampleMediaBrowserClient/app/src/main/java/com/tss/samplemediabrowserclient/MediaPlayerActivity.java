@@ -3,6 +3,7 @@ package com.tss.samplemediabrowserclient;
 import android.content.ComponentName;
 import android.media.AudioManager;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.support.v4.media.MediaBrowserCompat;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaControllerCompat;
@@ -35,10 +36,21 @@ public class MediaPlayerActivity extends AppCompatActivity {
     MediaControllerCompat.Callback mediaControllerCallback =
             new MediaControllerCompat.Callback() {
                 @Override
-                public void onMetadataChanged(MediaMetadataCompat metadata) {}
+                public void onMetadataChanged(MediaMetadataCompat metadata) {
+                    Log.i(LOG_TAG, "onMetadataChanged: ");
+
+                    Log.i(LOG_TAG, "onMetadataChanged: MEDIA ID -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID));
+                    Log.i(LOG_TAG, "onMetadataChanged: ARTIST -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_ARTIST));
+                    Log.i(LOG_TAG, "onMetadataChanged: ALBUM -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_ALBUM));
+                    Log.i(LOG_TAG, "onMetadataChanged: DURATION -> " + metadata.getLong(MediaMetadataCompat.METADATA_KEY_DURATION));
+                    Log.i(LOG_TAG, "onMetadataChanged: DISPLAY TITLE -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE));
+                    Log.i(LOG_TAG, "onMetadataChanged: KEY TITLE -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_TITLE));
+                }
 
                 @Override
-                public void onPlaybackStateChanged(PlaybackStateCompat state) {}
+                public void onPlaybackStateChanged(PlaybackStateCompat state) {
+                    Log.i(LOG_TAG, "onPlaybackStateChanged: PLAYBACK STATE -> " + state);
+                }
 
                 @Override
                 public void onSessionDestroyed() {
@@ -61,23 +73,27 @@ public class MediaPlayerActivity extends AppCompatActivity {
                 @Override
                 public void onConnected() {
                     // Get the token for the MediaSession
+                    Log.i(LOG_TAG, "onConnected: MediaBrowserService connected");
+
                     MediaSessionCompat.Token token = mediaBrowser.getSessionToken();
                     Log.i(LOG_TAG, "onConnected: Session token -> " + token);
 
                     // Create a MediaControllerCompat
                     mediaController =
-                            new MediaControllerCompat(MediaPlayerActivity.this, // Context
-                                    token);
+                            new MediaControllerCompat(MediaPlayerActivity.this, token);
+
+                    // Register a Callback to stay in sync
+                    Log.i(LOG_TAG, "onCreate: mediaControllerCallback registered");
+                    mediaController.registerCallback(mediaControllerCallback);
 
                     // Save the controller
+                    Log.i(LOG_TAG, "onConnected: Setting Media controller");
                     MediaControllerCompat.setMediaController(MediaPlayerActivity.this, mediaController);
 
                     // Finish building the UI
                     //buildTransportControls();
                     String rootId = mediaBrowser.getRoot();
                     Log.i(LOG_TAG, "onConnected: Root ID -> " + rootId);
-                    Bundle bundle = new Bundle();
-                    bundle.putString("childRootId", rootId);
                     mediaBrowser.subscribe(rootId, subscriptionCallback);
                 }
 
@@ -92,6 +108,7 @@ public class MediaPlayerActivity extends AppCompatActivity {
                     // The Service has refused our connection
                     Log.i(LOG_TAG, "onConnectionFailed: Connection failed");
                 }
+
             };
 
     /**
@@ -126,21 +143,12 @@ public class MediaPlayerActivity extends AppCompatActivity {
 
         recyclerView_RootItems = findViewById(R.id.recyclerView_rootItems);
 
-        // Create Media controller
-        mediaController = MediaControllerCompat
-                .getMediaController(MediaPlayerActivity.this);
-
         // Create MediaBrowserServiceCompat
         mediaBrowser = new MediaBrowserCompat(this,
                 new ComponentName("com.tss.samplemediabrowserservice",
                         "com.tss.samplemediabrowserservice.MediaPlaybackService"),
                 connectionCallbacks,
                 null); // optional Bundle
-
-        // Register a Callback to stay in sync
-        if (mediaController != null) {
-            mediaController.registerCallback(mediaControllerCallback);
-        }
     }
 
     @Override
@@ -148,12 +156,15 @@ public class MediaPlayerActivity extends AppCompatActivity {
         super.onStart();
         // Connect to Media Browser Service i.e MediaPlaybackService
         Log.i(LOG_TAG, "onStart: Connecting to service");
-        mediaBrowser.connect();
+        if (!mediaBrowser.isConnected()) {
+            mediaBrowser.connect();
+        }
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        Log.i(LOG_TAG, "onResume: ");
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
     }
 
@@ -162,8 +173,19 @@ public class MediaPlayerActivity extends AppCompatActivity {
         super.onStop();
         // (see "stay in sync with the MediaSession")
         Log.i(LOG_TAG, "onStop: Disconnecting from service");
-        mediaController = MediaControllerCompat.getMediaController(MediaPlayerActivity.this);
+//        mediaController = MediaControllerCompat.getMediaController(MediaPlayerActivity.this);
+//        if (mediaBrowser != null) {
+//            mediaController.unregisterCallback(mediaControllerCallback);
+//            mediaBrowser.disconnect();
+//        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
         if (mediaBrowser != null) {
+            mediaController = MediaControllerCompat.getMediaController(MediaPlayerActivity.this);
+            mediaController.getTransportControls().stop();
             mediaController.unregisterCallback(mediaControllerCallback);
             mediaBrowser.disconnect();
         }

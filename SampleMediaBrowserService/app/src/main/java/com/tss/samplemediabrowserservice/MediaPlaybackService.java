@@ -10,6 +10,8 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.TimedMetaData;
+import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.ResultReceiver;
@@ -34,25 +36,35 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class MediaPlaybackService extends MediaBrowserServiceCompat {
+public class MediaPlaybackService extends MediaBrowserServiceCompat  implements MediaPlayer.OnErrorListener {
     private static final String MY_MEDIA_ROOT_ID = "media_root_id";
     private static final String MY_EMPTY_MEDIA_ROOT_ID = "empty_root_id";
 
     final String LOG_TAG = "TSS-MP Server";
 
     MyDataSourceProvider mDataSourceProvider;
+    AudioManager audioManager;
     private MediaSessionCompat mediaSession;
     MediaPlayer mediaPlayer;
-
+    boolean hasAudioFocus = false;
     private PlaybackStateCompat.Builder stateBuilder;
 
     private AudioFocusRequest audioFocusRequest;
 
     AudioManager.OnAudioFocusChangeListener afChangeListener = focusChange -> {
         Log.i(LOG_TAG, "OnAudioFocusChangeListener: " + focusChange);
-        if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS | focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            hasAudioFocus =  false;
+            if (mediaPlayer.isPlaying()) {
+                Log.i(LOG_TAG, "OnAudioFocusChangeListener: Media player is paused");
+                mediaPlayer.pause();
+            }
+        } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 
-
+        } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+            hasAudioFocus = true;
+            Log.i(LOG_TAG, "OnAudioFocusChangeListener: Starting Media player");
+            mediaPlayer.start();
         }
     };
 
@@ -99,86 +111,74 @@ public class MediaPlaybackService extends MediaBrowserServiceCompat {
         @Override
         public void onPlay() {
             super.onPlay();
-            Log.i(LOG_TAG, "onPlay: ");
-
-//            mediaPlayer = MediaPlayer.create(MediaPlaybackService.this, Uri.parse(""));
-//            Log.i(LOG_TAG, "Media player: " + mediaPlayer);
-//
-//            AudioManager am = (AudioManager) MediaPlaybackService.this.getSystemService(Context.AUDIO_SERVICE);
-//            // Request audio focus for playback, this registers the afChangeListener
-//            AudioAttributes attrs = new AudioAttributes.Builder()
-//                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-//                    .build();
-//            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-//                    .setOnAudioFocusChangeListener(afChangeListener)
-//                    .setAudioAttributes(attrs)
-//                    .build();
-//            int result = am.requestAudioFocus(audioFocusRequest);
-//
-//            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-//                // Start the service
-//                startService(new Intent(MediaPlaybackService.this, MediaBrowserServiceCompat.class));
-//                // Set the session active  (and update metadata and state)
-//                mediaSession.setActive(true);
-//                // start the player (custom call)
-//                try {
-//                    mediaPlayer.prepare();
-//                } catch (IOException e) {
-//                    Log.i(LOG_TAG, "onPlay: " + e);
-//                    e.printStackTrace();
-//                    throw new RuntimeException(e);
-//                }
-//                mediaPlayer.start();
-                // Register BECOME_NOISY BroadcastReceiver
-                // registerReceiver(myNoisyAudioStreamReceiver, intentFilter);
-                // Put the service in the foreground, post notification
-                // service.startForeground(id, myPlayerNotification);
-            //}
-
+            Log.i(LOG_TAG, "onPlay: starting media player");
+            mediaPlayer.start();
+            PlaybackStateCompat playbackStateCompat = new PlaybackStateCompat.Builder()
+                    .setState(PlaybackStateCompat.STATE_PLAYING, mediaPlayer.getCurrentPosition(), mediaPlayer.getPlaybackParams().getSpeed())
+                    .setActions(PlaybackStateCompat.ACTION_PLAY)
+                    .build();
+            mediaSession.setPlaybackState(playbackStateCompat);
         }
 
         @Override
         public void onPlayFromMediaId(String mediaId, Bundle extras) {
             super.onPlayFromMediaId(mediaId, extras);
             Log.i(LOG_TAG, "onPlayFromMediaId: ");
-            Uri mediaUri = mDataSourceProvider.getMediaUri(mediaId);
+
+            Uri mediaUri = mDataSourceProvider.getMediaItemUri(mediaId);
             Log.i(LOG_TAG, "onPlayFromMediaId: Media Uri -> " + mediaUri);
             if (mediaUri != null) {
-                AudioManager audioManager = (AudioManager) MediaPlaybackService.this.getSystemService(Context.AUDIO_SERVICE);
-                // Request audio focus for playback, this registers the afChangeListener
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build();
-                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                        .setOnAudioFocusChangeListener(afChangeListener)
-                        .setAudioAttributes(attrs)
-                        .build();
-                Log.i(LOG_TAG, "onPlayFromMediaId: Requesting audio focus");
+                if (!hasAudioFocus) {
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Requesting audio focus");
 
-                int result = audioManager.requestAudioFocus(audioFocusRequest);
+                    int result = audioManager.requestAudioFocus(audioFocusRequest);
+                    Log.i(LOG_TAG, "onPlayFromMediaId: requestAudioFocus -> " + result);
 
-                if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                    Log.i(LOG_TAG, "onPlayFromMediaId: Audio focus granted");
-                    try {
-                        // Set the data source
-                        mediaPlayer.setDataSource(MediaPlaybackService.this, mediaUri);
-
-                        // Prepare the media
-                        mediaPlayer.prepare();
-
-                        // Start playback
-                        mediaPlayer.start();
-                    } catch (IOException e) {
-                        Log.i(LOG_TAG, "onPlayFromMediaId: error while starting the media player");
-                        e.printStackTrace();
-                        // Handle error
+                    if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                        Log.i(LOG_TAG, "onPlayFromMediaId: Audio focus granted");
+                        hasAudioFocus = true;
                     }
                 }
 
+                try {
+                    if (!mediaSession.isActive()) {
+                        mediaSession.setActive(true);
+                    }
+
+                    // Reset media player
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Media player reset");
+                    mediaPlayer.reset();
+
+                    // Set the data source
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Setting data source");
+                    mediaPlayer.setDataSource(MediaPlaybackService.this, mediaUri);
+
+                    // Prepare the media
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Preparing Media player");
+                    mediaPlayer.prepare();
+
+                    // Start playback
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Starting Media player");
+                    mediaPlayer.start();
+
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Setting Metadata");
+                    MediaMetadataCompat metadata = mDataSourceProvider.getMediaItemMetadata(mediaId);
+                    mediaSession.setMetadata(metadata);
+
+                    PlaybackStateCompat playbackStateCompat = new PlaybackStateCompat.Builder()
+                            .setState(PlaybackStateCompat.STATE_PLAYING, mediaPlayer.getCurrentPosition(), mediaPlayer.getPlaybackParams().getSpeed())
+                            .setActions(PlaybackStateCompat.ACTION_PLAY)
+                            .build();
+                    Log.i(LOG_TAG, "onPlayFromMediaId: Setting Playback state");
+                    mediaSession.setPlaybackState(playbackStateCompat);
+
+                } catch (IOException e) {
+                    Log.i(LOG_TAG, "onPlayFromMediaId: error while starting the media player");
+                    e.printStackTrace();
+                    // Handle error
+                }
                 // Set error listener
-                //mediaPlayer.setOnErrorListener(this::onError);
-            } else {
-                // Handle error
+                mediaPlayer.setOnErrorListener(MediaPlaybackService.this);
             }
         }
 
@@ -206,7 +206,7 @@ public class MediaPlaybackService extends MediaBrowserServiceCompat {
             // Take the service out of the foreground, retain the notification
             // service.stopForeground(false);
             mediaPlayer.pause();
-            Log.i(LOG_TAG, "onGetRoot: Media Player is paused");
+            Log.i(LOG_TAG, "onPause: Media Player is paused");
         }
 
         @Override
@@ -227,7 +227,7 @@ public class MediaPlaybackService extends MediaBrowserServiceCompat {
             // service.stopForeground(false);
             mediaSession.setActive(false);
             mediaPlayer.stop();
-            Log.i(LOG_TAG, "onGetRoot: Media Session and Media Player is stopped");
+            Log.i(LOG_TAG, "onStop: Media Session and Media Player is stopped");
 
         }
 
@@ -358,6 +358,30 @@ public class MediaPlaybackService extends MediaBrowserServiceCompat {
 
         mediaPlayer = new MediaPlayer();
 
+        // Request audio focus for playback, this registers the afChangeListener
+        audioManager = (AudioManager) MediaPlaybackService.this.getSystemService(Context.AUDIO_SERVICE);
+
+        AudioAttributes attrs = new AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
+
+        audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setOnAudioFocusChangeListener(afChangeListener)
+                .setAudioAttributes(attrs)
+                .build();
+
+        Log.i(LOG_TAG, "onCreate: Audio Focus instance created " + audioFocusRequest);
+
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.i(LOG_TAG, "onDestroy: Releasing media player");
+        mediaPlayer.release();
+
+        Log.i(LOG_TAG, "onDestroy: Releasing audio focus");
+        audioManager.abandonAudioFocusRequest(audioFocusRequest);
     }
 
     @Nullable
@@ -468,8 +492,8 @@ public class MediaPlaybackService extends MediaBrowserServiceCompat {
 
                         Uri mediaUri = mediaItem.getDescription().getMediaUri();
                         Log.i(LOG_TAG, "onLoadChildren: Adding media uri to data source: " + mediaUri);
-                        mDataSourceProvider.addMediaItem(mediaItem.getMediaId(),
-                                mediaUri);
+                        mDataSourceProvider.addMediaItemUri(mediaItem.getMediaId(), mediaUri);
+                        mDataSourceProvider.addMediaItemMetadata(mediaItem.getMediaId(), mediaMetadata);
                     }
                     cursor.close();
                 }
@@ -482,19 +506,36 @@ public class MediaPlaybackService extends MediaBrowserServiceCompat {
         result.sendResult(mediaItems);
     }
 
+    @Override
+    public boolean onError(MediaPlayer mp, int what, int extra) {
+        return false;
+    }
+
     public static class MyDataSourceProvider {
 
+        // Map of media IDs to media metadata
+        private final Map<String, MediaMetadataCompat> mMediaMetadataMap = new HashMap<>();
         // Map of media IDs to media URIs
         private final Map<String, Uri> mMediaUriMap = new HashMap<>();
 
         // Add a new media item to the data source provider
-        public void addMediaItem(String mediaId, Uri mediaUri) {
-            mMediaUriMap.put(mediaId, mediaUri);
+        public void addMediaItemUri(String mediaId, Uri uri) {
+            mMediaUriMap.put(mediaId, uri);
         }
 
         // Get the media URI for the specified media ID
-        public Uri getMediaUri(String mediaId) {
+        public Uri getMediaItemUri(String mediaId) {
             return mMediaUriMap.get(mediaId);
+        }
+
+        // Add a new media item to the data source provider
+        public void addMediaItemMetadata(String mediaId, MediaMetadataCompat metadata) {
+            mMediaMetadataMap.put(mediaId, metadata);
+        }
+
+        // Get the media URI for the specified media ID
+        public MediaMetadataCompat getMediaItemMetadata(String mediaId) {
+            return mMediaMetadataMap.get(mediaId);
         }
     }
 }
