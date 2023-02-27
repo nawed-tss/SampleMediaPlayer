@@ -1,5 +1,7 @@
 package com.tss.samplemediabrowserclient;
 
+import android.content.Context;
+import android.content.Intent;
 import android.support.v4.media.MediaBrowserCompat;
 import android.support.v4.media.session.MediaControllerCompat;
 import android.util.Log;
@@ -15,16 +17,13 @@ import java.util.List;
 
 public class RootItemListAdapter extends RecyclerView.Adapter<RootItemListAdapter.RootItemViewHolder> {
     final String LOG_TAG = "TSS-MP Client";
-    MediaBrowserCompat mediaBrowser;
-    MediaBrowserCompat.SubscriptionCallback subscriptionCallback;
-    List<MediaBrowserCompat.MediaItem> rootItemList;
-    MediaControllerCompat mediaController;
 
-    RootItemListAdapter(MediaBrowserCompat mediaBrowser, MediaBrowserCompat.SubscriptionCallback subscriptionCallback, MediaControllerCompat mediaController, List<MediaBrowserCompat.MediaItem> rootItemList) {
-        this.mediaBrowser = mediaBrowser;
-        this.subscriptionCallback = subscriptionCallback;
+    Context context;
+    List<MediaBrowserCompat.MediaItem> rootItemList;
+
+    RootItemListAdapter(Context context, List<MediaBrowserCompat.MediaItem> rootItemList) {
+        this.context = context;
         this.rootItemList = rootItemList;
-        this.mediaController = mediaController;
     }
 
     @NonNull
@@ -43,12 +42,15 @@ public class RootItemListAdapter extends RecyclerView.Adapter<RootItemListAdapte
             Log.i(LOG_TAG, "onBindViewHolder: media id -> " + mediaItem.getMediaId());
             if (mediaItem.isBrowsable()) {
                 Log.i(LOG_TAG, "onBindViewHolder: media is BROWSABLE");
-                mediaBrowser.subscribe(mediaItem.getMediaId(), subscriptionCallback);
+                MediaPlayerHandler.getInstance().subscribeToRootId(mediaItem.getMediaId());
             }else if (mediaItem.isPlayable()) {
                 Log.i(LOG_TAG, "onBindViewHolder: media is PLAYABLE");
-                mediaController.getTransportControls().playFromMediaId(mediaItem.getMediaId(), null);
+                Intent intent = new Intent(context, PlayerActivity.class);
+                intent.putExtra("mediaItem", mediaItem);
+                context.startActivity(intent);
             }
         });
+
     }
 
     @Override
