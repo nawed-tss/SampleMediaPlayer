@@ -2,7 +2,6 @@ package com.tss.samplemediabrowserclient;
 
 import android.app.Activity;
 import android.content.ComponentName;
-import android.content.Context;
 import android.support.v4.media.MediaBrowserCompat;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaControllerCompat;
@@ -15,14 +14,19 @@ import androidx.annotation.NonNull;
 import java.util.List;
 
 public class MediaPlayerHandler {
-    String LOG_TAG = "TSS-MP MediaPlayerHandler";
+    String LOG_TAG = "MP-Client MediaPlayerHandler";
     private static MediaPlayerHandler sInstance = null;
+
+    private Activity activity = null;
+    private MediaPlayerComm mediaPlayerComm;
 
     private MediaBrowserCompat mediaBrowser;
     private MediaControllerCompat mediaController;
 
-    private MediaPlayerComm mMediaPlayerComm;
-    protected MediaItemMetadataInterface mMediaItemMetadataInterface;
+    private PlayerActivity playerActivity;
+//
+//    private static MediaPlayerComm mMediaPlayerComm;
+//    protected static MediaItemMetadataInterface mMediaItemMetadataInterface;
 
     /**
      * To receive callbacks from the media session every time its state or metadata change.
@@ -39,12 +43,13 @@ public class MediaPlayerHandler {
                     Log.i(LOG_TAG, "onMetadataChanged: DISPLAY TITLE -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE));
                     Log.i(LOG_TAG, "onMetadataChanged: KEY TITLE -> " + metadata.getString(MediaMetadataCompat.METADATA_KEY_TITLE));
 
-                    mMediaItemMetadataInterface.onMetadataChanged(metadata);
+                    playerActivity.onMetadataChanged(metadata);
                 }
 
                 @Override
                 public void onPlaybackStateChanged(PlaybackStateCompat state) {
                     Log.i(LOG_TAG, "onPlaybackStateChanged: PLAYBACK STATE -> " + state);
+                    playerActivity.onPlaybackStateChanged(state);
                 }
 
                 @Override
@@ -69,15 +74,14 @@ public class MediaPlayerHandler {
                 @Override
                 public void onConnected() {
                     // Get the token for the MediaSession
-                    Log.i(LOG_TAG, "onConnected: MediaBrowserService connected");
+                    Log.i(LOG_TAG, "onConnected: MediaBrowserService connected -> " +  activity.getWindow());
 
                     MediaSessionCompat.Token token = mediaBrowser.getSessionToken();
                     Log.i(LOG_TAG, "onConnected: Session token -> " + token);
 
-                    mMediaPlayerComm.onConnected(token);
-//                    // Finish building the UI
-//                    //buildTransportControls();
-                    subscribeToRootId(mediaBrowser.getRoot());
+                    initializeMediaController(activity, token);
+
+                    subscribeToRootId("__FOLDERS__");
                 }
 
                 @Override
@@ -104,7 +108,7 @@ public class MediaPlayerHandler {
             super.onChildrenLoaded(parentId, children);
             Log.i(LOG_TAG, "onChildrenLoaded: parent id -> " + parentId);
             Log.i(LOG_TAG, "onChildrenLoaded: Children -> " + children);
-            mMediaPlayerComm.onChildrenLoaded(children);
+            mediaPlayerComm.onChildrenLoaded(children);
         }
 
         @Override
@@ -116,8 +120,7 @@ public class MediaPlayerHandler {
 
 
     private MediaPlayerHandler() {
-        mMediaPlayerComm = new MediaPlayerActivity();
-        mMediaItemMetadataInterface = new PlayerActivity();
+        Log.i(LOG_TAG, "MediaPlayerHandler: Initialized");
     }
 
     public static MediaPlayerHandler getInstance() {
@@ -127,7 +130,7 @@ public class MediaPlayerHandler {
         return sInstance;
     }
 
-    public void initializeMediaController(Activity activity, MediaSessionCompat.Token token) {
+    private void initializeMediaController(Activity activity, MediaSessionCompat.Token token) {
         Log.i(LOG_TAG, "initializeMediaController: Initializing Media Controller");
         // Create a MediaControllerCompat
         mediaController =
@@ -139,13 +142,17 @@ public class MediaPlayerHandler {
 
         // Save the controller
         Log.i(LOG_TAG, "initializeMediaController: Setting Media controller");
+        Log.i(LOG_TAG, "initializeMediaController: Activity instance -> " + activity);
         MediaControllerCompat.setMediaController(activity, mediaController);
 
     }
 
-    public void initializeMediaBrowser(Context context) {
+    public void initializeMediaBrowser(Activity activity) {
+        this.activity = activity;
+        mediaPlayerComm = (MediaPlayerActivity) activity;
+
         Log.i(LOG_TAG, "initializeMediaBrowser: Initializing Media Browser");
-        mediaBrowser = new MediaBrowserCompat(context.getApplicationContext(),
+        mediaBrowser = new MediaBrowserCompat(activity.getApplicationContext(),
                 new ComponentName("com.tss.samplemediabrowserservice",
                         "com.tss.samplemediabrowserservice.MediaPlaybackService"),
                 connectionCallbacks,
@@ -177,5 +184,14 @@ public class MediaPlayerHandler {
     public MediaControllerCompat.TransportControls getMediaTransportControls() {
         Log.i(LOG_TAG, "getMediaTransportControls: ");
         return mediaController.getTransportControls();
+    }
+
+    public MediaControllerCompat getMediaController() {
+        Log.i(LOG_TAG, "getMediaController: ");
+        return mediaController;
+    }
+
+    public void setPlayerActivityInstance(PlayerActivity playerActivity) {
+        this.playerActivity = playerActivity;
     }
 }

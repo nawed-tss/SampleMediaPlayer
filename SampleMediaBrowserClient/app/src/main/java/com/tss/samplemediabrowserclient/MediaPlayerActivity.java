@@ -1,5 +1,7 @@
 package com.tss.samplemediabrowserclient;
 
+import android.app.Activity;
+import android.content.Context;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.support.v4.media.MediaBrowserCompat;
@@ -10,6 +12,7 @@ import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewTreeObserver;
+import android.view.Window;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
@@ -20,9 +23,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.List;
 
-public class MediaPlayerActivity extends AppCompatActivity implements MediaPlayerComm {
-    final String LOG_TAG = "TSS-MP Client";
+public class MediaPlayerActivity extends AppCompatActivity implements MediaPlayerComm{
+    final String LOG_TAG = "MP-Client MediaPlayerActivity";
 
+    private Context context;
     private RecyclerView recyclerView_RootItems;
     private RootItemListAdapter rootItemListAdapter;
 
@@ -31,6 +35,8 @@ public class MediaPlayerActivity extends AppCompatActivity implements MediaPlaye
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_mediaplayer);
         Log.i(LOG_TAG, "onCreate: ");
+
+        context = MediaPlayerActivity.this;
 
         recyclerView_RootItems = findViewById(R.id.recyclerView_rootItems);
 
@@ -41,7 +47,7 @@ public class MediaPlayerActivity extends AppCompatActivity implements MediaPlaye
     public void onStart() {
         super.onStart();
         // Connect to Media Browser Service i.e MediaPlaybackService
-        Log.i(LOG_TAG, "onStart: Connecting to service");
+        Log.i(LOG_TAG, "onStart: ");
         MediaPlayerHandler.getInstance().connectToService();
     }
 
@@ -73,23 +79,18 @@ public class MediaPlayerActivity extends AppCompatActivity implements MediaPlaye
     }
 
     @Override
-    public void onConnected(MediaSessionCompat.Token token) {
-        Log.i(LOG_TAG, "onConnected: ");
-        //MediaPlayerHandler.getInstance().initializeMediaController(MediaPlayerActivity.this, token);
-    }
-
-    @Override
     public void onChildrenLoaded(List<MediaBrowserCompat.MediaItem> children) {
         Log.i(LOG_TAG, "onChildrenLoaded: ");
         if (!children.isEmpty()) {
-            rootItemListAdapter = new RootItemListAdapter(MediaPlayerActivity.this, children);
+            rootItemListAdapter = new RootItemListAdapter(context, children);
             recyclerView_RootItems.setHasFixedSize(true);
-            recyclerView_RootItems.setLayoutManager(new LinearLayoutManager(MediaPlayerActivity.this));
+            recyclerView_RootItems.setLayoutManager(new LinearLayoutManager(context));
             recyclerView_RootItems.setAdapter(rootItemListAdapter);
             rootItemListAdapter.notifyDataSetChanged();
         } else {
             Log.e(LOG_TAG, "onChildrenLoaded: Media Item list is empty");
         }
     }
+
 }
 
